@@ -7,7 +7,7 @@ import os
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-# Persistent SQLite path (for local dev). For hosting, use PostgreSQL URL.
+# SQLite DB setup
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 db_path = os.path.join(BASE_DIR, "dummy_tickets.db")
 app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
@@ -29,44 +29,7 @@ class Ticket(db.Model):
     status = db.Column(db.String, default="available")
     updated_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-# ---------------------------- API ROUTES ---------------------------- #
-@app.route("/api/tickets/create", methods=["POST"])
-def create_ticket():
-    try:
-        data = request.get_json()
-        if Ticket.query.get(data["pnr"]):
-            return jsonify({"message": "Ticket already exists"}), 409
-        ticket = Ticket(**data)
-        db.session.add(ticket)
-        db.session.commit()
-        return jsonify({"message": "Dummy ticket created"}), 201
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api/tickets/verify", methods=["POST"])
-def verify_ticket():
-    try:
-        data = request.get_json()
-        ticket = Ticket.query.filter_by(
-            pnr=data["pnr"],
-            passenger_name=data["passenger_name"],
-            departure_date=data["departure_date"],
-            departure_time=data["departure_time"]
-        ).first()
-        if ticket:
-            return jsonify({"status": "valid", "ticket": ticket_to_dict(ticket)})
-        return jsonify({"status": "invalid", "message": "Ticket not found"}), 404
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api/tickets", methods=["GET"])
-def get_all_tickets():
-    try:
-        tickets = Ticket.query.all()
-        return jsonify([ticket_to_dict(t) for t in tickets])
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+# ---------------------------- HELPER ---------------------------- #
 def ticket_to_dict(t):
     return {
         "pnr": t.pnr,
@@ -82,9 +45,87 @@ def ticket_to_dict(t):
         "updated_at": t.updated_at.strftime("%Y-%m-%d %H:%M:%S")
     }
 
-# ---------------------------- UI ROUTES (Same as before) ---------------------------- #
-# Keep your TEMPLATE and UI routes unchanged unless you want frontend hosted separately.
+# ---------------------------- API ROUTES ---------------------------- #
+@app.route("/api/tickets/create", methods=["POST"])
+def create_ticket():
+    data = request.get_json()
+    if Ticket.query.get(data["pnr"]):
+        return jsonify({"message": "Ticket already exists"}), 409
+    ticket = Ticket(**data)
+    db.session.add(ticket)
+    db.session.commit()
+    return jsonify({"message": "Dummy ticket created"}), 201
 
+@app.route("/api/tickets/verify", methods=["POST"])
+def verify_ticket():
+    data = request.get_json()
+    ticket = Ticket.query.filter_by(
+        pnr=data["pnr"],
+        passenger_name=data["passenger_name"],
+        departure_date=data["departure_date"],
+        departure_time=data["departure_time"]
+    ).first()
+    if ticket:
+        return jsonify({"status": "valid", "ticket": ticket_to_dict(ticket)})
+    return jsonify({"status": "invalid", "message": "Ticket not found"}), 404
+
+@app.route("/api/tickets", methods=["GET"])
+def get_all_tickets():
+    tickets = Ticket.query.all()
+    return jsonify([ticket_to_dict(t) for t in tickets])
+
+# ---------------------------- UI TEMPLATE ---------------------------- #
+TEMPLATE = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ticket Demo UI</title>
+    <style>
+        body { font-family: Arial; margin: 20px; }
+        .form-section, .card { margin-bottom: 30px; }
+        .card { border: 1px solid #ddd; padding: 20px; border-radius: 10px; width: 300px; display: inline-block; margin: 10px; vertical-align: top; }
+        .card.sold { background-color: #f8d7da; }
+        .card.available { background-color: #d4edda; }
+    </style>
+</head>
+<body>
+    <h1>🎫 Dummy Ticket Creator & Viewer</h1>
+
+    <div class="form-section">
+        <h2>Create Dummy Ticket</h2>
+        <form method="POST" action="{{ url_for('create_ticket_ui') }}">
+            <input name="pnr" placeholder="PNR" required><br><br>
+            <input name="passenger_name" placeholder="Passenger Name" required><br><br>
+            <input name="departure_date" type="date" required><br><br>
+            <input name="departure_time" type="time" required><br><br>
+            <input name="from_location" placeholder="From" required><br><br>
+            <input name="to_location" placeholder="To" required><br><br>
+            <input name="bus_operator" placeholder="Bus Operator" required><br><br>
+            <input name="seat_number" placeholder="Seat No" required><br><br>
+            <input name="price" placeholder="Price" type="number" required><br><br>
+            <button type="submit">Create Ticket</button>
+        </form>
+    </div>
+
+    <hr>
+
+    <h2>All Tickets</h2>
+    {% for ticket in tickets %}
+    <div class="card {{ ticket.status }}">
+        <strong>PNR:</strong> {{ ticket.pnr }}<br>
+        <strong>Name:</strong> {{ ticket.passenger_name }}<br>
+        <strong>From:</strong> {{ ticket.from }} → <strong>To:</strong> {{ ticket.to }}<br>
+        <strong>Date:</strong> {{ ticket.departure_date }} @ {{ ticket.departure_time }}<br>
+        <strong>Seat:</strong> {{ ticket.seat_number }}<br>
+        <strong>Price:</strong> ₹{{ ticket.price }}<br>
+        <strong>Status:</strong> {{ ticket.status }}<br>
+    </div>
+    {% endfor %}
+</body>
+</html>
+'''
+
+# ---------------------------- UI ROUTES ---------------------------- #
 @app.route("/", methods=["GET"])
 def index():
     tickets = Ticket.query.order_by(Ticket.updated_at.desc()).all()
@@ -113,3 +154,4 @@ if __name__ == "__main__":
     with app.app_context():
         db.create_all()
     app.run(debug=True, host="0.0.0.0", port=5000)
+
