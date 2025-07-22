@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template_string
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from datetime import datetime
@@ -13,6 +13,7 @@ app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db = SQLAlchemy(app)
 
+# Ticket Model
 class Ticket(db.Model):
     pnr = db.Column(db.String(10), primary_key=True)
     passenger_name = db.Column(db.String(100))
@@ -26,13 +27,43 @@ class Ticket(db.Model):
     status = db.Column(db.String(20), default="available")
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-# Auto-create DB tables
 with app.app_context():
     db.create_all()
 
 @app.route("/")
 def home():
-    return "<h2>✅ Dummy Ticket API is running!</h2><p>Use <code>/tickets</code> endpoints.</p>"
+    return render_template_string("""
+    <html>
+    <head>
+        <title>Dummy Tickets</title>
+        <style>
+            body { font-family: Arial; background: #f0f0f0; padding: 20px; }
+            h1 { color: #333; }
+            .ticket { background: #fff; padding: 10px 20px; margin: 10px 0; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+        </style>
+    </head>
+    <body>
+        <h1>✅ Dummy Ticket API is running!</h1>
+        <p>Use <code>/tickets</code> endpoint for GET/POST.</p>
+        <h3>🚌 All Tickets:</h3>
+        <div id="ticketList"></div>
+
+        <script>
+            fetch('/tickets')
+                .then(res => res.json())
+                .then(data => {
+                    const container = document.getElementById("ticketList");
+                    data.forEach(t => {
+                        const div = document.createElement("div");
+                        div.className = "ticket";
+                        div.innerHTML = `<strong>${t.pnr}</strong>: ${t.passenger_name} from ${t.from_location} to ${t.to_location} (${t.status})`;
+                        container.appendChild(div);
+                    });
+                });
+        </script>
+    </body>
+    </html>
+    """)
 
 @app.route("/tickets", methods=["POST"])
 def create_ticket():
@@ -99,12 +130,7 @@ def transfer_ticket(pnr):
     ticket.passenger_name = data.get("passenger_name", ticket.passenger_name)
     ticket.status = "sold"
     db.session.commit()
-
     return jsonify({"message": "Ticket ownership transferred"})
 
-# Render uses gunicorn, this is only for local
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(debug=True, host="0.0.0.0", port=port)
-
-
+    app.run(debug=True, host="0.0.0.0", port=10000)
